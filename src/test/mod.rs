@@ -1,13 +1,12 @@
 extern crate std;
 use std::prelude::rust_2021::*;
 
-use crate as string_view;
-
 use string_view::StrExt;
+
+use crate as string_view;
 
 #[test]
 fn chars_in_place() {
-
     let mut iter = "Hello".chars_in_place();
 
     assert_eq!(*"H", *iter.next().unwrap());
@@ -19,7 +18,6 @@ fn chars_in_place() {
 
 #[test]
 fn chars_in_place_mut() {
-
     let text: &mut str = &mut String::from("Hello");
 
     let mut iter = text.chars_in_place_mut();
