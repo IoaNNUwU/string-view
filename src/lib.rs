@@ -112,12 +112,14 @@ impl<'a> StringView<'a> {
         &self.base[self.view_start..self.view_start + self.view_len]
     }
 
-    pub fn shrink_to_end(&mut self) {
+    /// Shrinks this view to current left edge with length zero.
+    pub fn shrink_left(&mut self) {
         self.view_start += self.view_len;
         self.view_len = 0;
     }
 
-    pub fn shrink_to_start(&mut self) {
+    /// Shrinks this view to current right edge with length zero.
+    pub fn shrink_right(&mut self) {
         self.view_len = 0;
     }
 
