@@ -1,0 +1,19 @@
+[package]
+name = "string-view"
+version = "0.1.0"
+edition = "2021"
+
+authors = ["ioannuwu <https://github.com/IoaNNUwU>"]
+license= "MIT"
+
+description = "Work with views into string slices. Safely extend, reduce without losing parent string size."
+
+repository = "https://github.com/IoaNNUwU/string-view"
+homepage = "https://github.com/IoaNNUwU/string-view"
+
+readme = "README.md"
+
+keywords = ["string", "text", "compiler", "parser", "tokenizer"]
+
+# https://crates.io/category_slugs
+categories = ["parsing", "text-processing", "template-engine", "no-std::no-alloc", "text-editors"]
