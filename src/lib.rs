@@ -1,10 +1,22 @@
 //! ## String View
 //!
+//! #### Use in-place modifications to avoid allocations.
+//! 
+//! ```rust
+//! # extern crate std;
+//! # use std::string::String;
+//! use string_view::StrExt;
+//! 
+//! let text: &mut str = &mut String::from("Hello World");
+//! 
+//! text.chars_in_place()
+//!     .filter(|ch| !ch.char().is_whitespace())
+//!     .for_each(|ch| ch.make_uppercase());
+//! 
+//! assert_eq!(text, "HELLO WORLD");
+//! ```
+//!
 //! #### Work with views into string slices. Safely extend, reduce without losing parent string size.
-//!
-//! #### Use in-place modifications to speed up your code.
-//!
-//! Example:
 //!
 //! ```rust
 //! let program_text = r#"
@@ -27,14 +39,14 @@
 //! assert_eq!(view.as_str(), "fn main()");
 //!
 //! view.extend_while(|ch| ch == ' ' || ch == '\n' || ch == '{');
-//! view.shrink_to_end();
+//! view.shrink_left();
 //! view.extend_while(|_| true);
 //! view.reduce_while(|ch| ch == ' ' || ch == '\n' || ch == '}');
 //! assert_eq!(view.as_str(), r#"let text = "Hello World";"#);
-//! 
+//!
 //! view.reduce_while(|ch| ch == ';');
 //! view.reduce(1);
-//! view.shrink_to_end();
+//! view.shrink_left();
 //! view.extend_left_while(|ch| ch != '"');
 //! assert_eq!(view.as_str(), "Hello World");
 //! ```
@@ -45,6 +57,24 @@ use core::error::Error;
 use core::fmt::{Debug, Display};
 use core::ops::{Deref, DerefMut};
 
+/// View into [`str`] slice.
+/// 
+/// Holds parent `str` info which allows to safely extend this view with parent
+/// size in mind.
+/// 
+/// ```rust
+/// use string_view::StrExt;
+/// 
+/// let text = "Hello World";
+/// let mut view = text.view_part(6, 11);
+/// assert_eq!(view.as_str(), "World");
+/// 
+/// view.extend_left(6);
+/// assert_eq!(view.as_str(), "Hello World");
+/// 
+/// view.reduce_while(char::is_alphabetic);
+/// assert_eq!(view.as_str(), "Hello ");
+/// ```
 pub struct StringView<'a> {
     pub base: &'a str,
     /// byte idx of view start inside [`StringView::base`].
@@ -112,18 +142,61 @@ impl<'a> StringView<'a> {
         &self.base[self.view_start..self.view_start + self.view_len]
     }
 
-    /// Shrinks this view to current left edge with length zero.
+    /// Shrinks this view from the left to current right edge with length zero.
+    ///
+    /// ```rust,ignore
+    /// [ str [ view ]  ]
+    /// [ str    -> []  ]
+    /// ```
+    ///
+    /// #### Example:
+    ///
+    /// ```rust
+    /// use string_view::StrExt;
+    ///
+    /// let text = "Hello World";
+    /// let mut view = text.view();
+    /// assert_eq!(view.as_str(), "Hello World");
+    ///
+    /// view.shrink_left();
+    /// view.extend_left_while(char::is_alphabetic);
+    /// assert_eq!(view.as_str(), "World");
+    /// ```
     pub fn shrink_left(&mut self) {
         self.view_start += self.view_len;
         self.view_len = 0;
     }
 
-    /// Shrinks this view to current right edge with length zero.
-    pub fn shrink_right(&mut self) {
+    /// Shrinks this view from the right to current left edge with length zero.
+    ///
+    /// ```rust,ignore
+    /// [ str [ view ]  ]
+    /// [ str [] <-     ]
+    /// ```
+    ///
+    /// #### Example:
+    ///
+    /// ```rust
+    /// use string_view::StrExt;
+    ///
+    /// let text = "Hello World";
+    /// let mut view = text.view();
+    /// assert_eq!(view.as_str(), "Hello World");
+    ///
+    /// view.shrink();
+    /// view.extend_while(char::is_alphabetic);
+    /// assert_eq!(view.as_str(), "Hello");
+    /// ```
+    pub fn shrink(&mut self) {
         self.view_len = 0;
     }
 
     /// Extend string view to the right by `n` characters.
+    ///
+    /// ```rust,ignore
+    /// [ str  [ view ]         ]
+    /// [ str  [  view  -> n ]  ]
+    /// ```
     ///
     /// panics if there is not enough characters in base string to the right of this view.
     ///
@@ -145,6 +218,11 @@ impl<'a> StringView<'a> {
     }
 
     /// Try to extend string view to the right by `n` characters.
+    ///
+    /// ```rust,ignore
+    /// [ str  [ view ]         ]
+    /// [ str  [  view  -> n ]  ]
+    /// ```
     ///
     /// returns [`Err`] if there is not enough characters in base string to the right of this view.
     ///
@@ -175,6 +253,13 @@ impl<'a> StringView<'a> {
     }
 
     /// Extend string view to the right while `func` returns `true`.
+    ///
+    /// ```rust,ignore
+    /// [ str  [ view ]         ]
+    /// [ str  [  view  -> n ]  ]
+    /// ```
+    ///
+    /// ### Example:
     ///
     /// ```rust
     /// use string_view::StrExt;
@@ -210,6 +295,11 @@ impl<'a> StringView<'a> {
 
     /// Reduce string view from the right by `n` characters.
     ///
+    /// ```rust,ignore
+    /// [ str  [   view   ]    ]
+    /// [ str  [ view ] <- n   ]
+    /// ```
+    ///
     /// panics if there is not enough characters in current string view.
     ///
     /// ```rust
@@ -229,6 +319,11 @@ impl<'a> StringView<'a> {
     }
 
     /// Try to reduce string view from the right by `n` characters.
+    ///
+    /// ```rust,ignore
+    /// [ str  [   view   ]    ]
+    /// [ str  [ view ] <- n   ]
+    /// ```
     ///
     /// returns [`Err`] if there is not enough characters in current string view.
     ///
@@ -259,6 +354,11 @@ impl<'a> StringView<'a> {
     }
 
     /// Reduce string view from the right while `func` returns `true`.
+    ///
+    /// ```rust,ignore
+    /// [ str  [   view   ]    ]
+    /// [ str  [ view ] <- n   ]
+    /// ```
     ///
     /// ```rust
     /// use string_view::StrExt;
@@ -293,6 +393,11 @@ impl<'a> StringView<'a> {
 
     /// Extend string view to the left by `n` characters.
     ///
+    /// ```rust,ignore
+    /// [ str        [ view ]  ]
+    /// [ str  [ n <-  view ]  ]
+    /// ```
+    ///
     /// panics if there is not enough characters in base string to the left of this view.
     ///
     /// see [`StringView::try_extend_left`] for fallible version.
@@ -315,6 +420,11 @@ impl<'a> StringView<'a> {
     }
 
     /// Try to extend string view to the left by `n` characters.
+    ///
+    /// ```rust,ignore
+    /// [ str        [ view ]  ]
+    /// [ str  [ n <-  view ]  ]
+    /// ```
     ///
     /// returns [`Err`] if there is not enough characters in base string to the right of this view.
     ///
@@ -348,6 +458,11 @@ impl<'a> StringView<'a> {
     }
 
     /// Extend string view to the left while `func` returns `true`.
+    ///
+    /// ```rust,ignore
+    /// [ str        [ view ]  ]
+    /// [ str  [ n <-  view ]  ]
+    /// ```
     ///
     /// see [`StringView::extend_while`] to extend to the right.
     ///
@@ -386,6 +501,11 @@ impl<'a> StringView<'a> {
 
     /// Reduce string view from the left by `n` characters.
     ///
+    /// ```rust,ignore
+    /// [ str   [   view   ]   ]
+    /// [ str  n -> [ view ]   ]
+    /// ```
+    ///
     /// panics if there is not enough characters in current string view.
     ///
     /// see [`StringView::try_reduce_left`] for fallible version.
@@ -409,6 +529,11 @@ impl<'a> StringView<'a> {
     }
 
     /// Try to reduce string view from the left by `n` characters.
+    ///
+    /// ```rust,ignore
+    /// [ str   [   view   ]   ]
+    /// [ str  n -> [ view ]   ]
+    /// ```
     ///
     /// returns [`Err`] if there is not enough characters in current string view.
     ///
@@ -442,6 +567,11 @@ impl<'a> StringView<'a> {
     }
 
     /// Reduce string view from the left while `func` returns `true`.
+    ///
+    /// ```rust,ignore
+    /// [ str   [   view   ]   ]
+    /// [ str  n -> [ view ]   ]
+    /// ```
     ///
     /// see [`StringView::reduce_while`] to reduce from the right.
     ///
@@ -586,6 +716,10 @@ impl Char<'_> {
     pub fn as_str(&self) -> &str {
         self.0
     }
+
+    fn have_same_size(&self, ch: char) -> bool {
+        self.char().len_utf8() == ch.len_utf8()
+    }
 }
 
 impl<'a> Deref for Char<'a> {
@@ -661,6 +795,78 @@ impl CharMut<'_> {
     pub fn as_char(&self) -> Char<'_> {
         Char(&self.0)
     }
+
+    pub fn is_same_size(&self, ch: char) -> bool {
+        self.char().len_utf8() == ch.len_utf8()
+    }
+
+    pub fn replace(&mut self, ch: char) -> Result<(), CharsHaveDifferentSizes> {
+        if !self.is_same_size(ch) {
+            return Err(CharsHaveDifferentSizes);
+        }
+        let mut buf: [u8; 4] = [0; 4];
+        let subslice: &[u8] = ch.encode_utf8(&mut buf).as_bytes();
+
+        // Safety: self and subslice have the same number of bytes
+        unsafe {
+            for (idx, byte) in self.as_bytes_mut().into_iter().enumerate() {
+                *byte = subslice[idx];
+            }
+        }
+        Ok(())
+    }
+
+    /// Makes [`CharMut`] uppercase in-place.
+    ///
+    /// returns [`Err`] if uppercase variant has different size.
+    ///
+    /// ```rust
+    /// # extern crate std;
+    /// # use std::string::String;
+    ///
+    /// use string_view::StrExt;
+    ///
+    /// let text: &mut str = &mut String::from("Hello World");
+    /// text.chars_in_place_mut().for_each(|mut ch| ch.make_uppercase().unwrap());
+    ///
+    /// assert_eq!(text, "HELLO WORLD");
+    /// ```
+    pub fn make_uppercase(&mut self) -> Result<(), CharsHaveDifferentSizes> {
+        let this_char = self.char();
+        let mut upper_chars = this_char.to_uppercase();
+        let this_upper = upper_chars.next().unwrap();
+
+        if upper_chars.next().is_some() {
+            return Err(CharsHaveDifferentSizes);
+        };
+        self.replace(this_upper)
+    }
+
+    /// Makes [`CharMut`] uppercase in-place.
+    ///
+    /// returns [`Err`] if uppercase variant has different size.
+    ///
+    /// ```rust
+    /// # extern crate std;
+    /// # use std::string::String;
+    ///
+    /// use string_view::StrExt;
+    ///
+    /// let text: &mut str = &mut String::from("Hello World");
+    /// text.chars_in_place_mut().for_each(|mut ch| ch.make_lowercase().unwrap());
+    ///
+    /// assert_eq!(text, "hello world");
+    /// ```
+    pub fn make_lowercase(&mut self) -> Result<(), CharsHaveDifferentSizes> {
+        let this_char = self.char();
+        let mut lower_chars = this_char.to_lowercase();
+        let this_lower = lower_chars.next().unwrap();
+
+        if lower_chars.next().is_some() {
+            return Err(CharsHaveDifferentSizes);
+        };
+        self.replace(this_lower)
+    }
 }
 
 impl<'a> Deref for CharMut<'a> {
@@ -706,6 +912,27 @@ impl<'a> Iterator for CharsInPlaceMut<'a> {
     }
 }
 
+/// Common error case while working with chars in-place
+pub struct CharsHaveDifferentSizes;
+
+impl Debug for CharsHaveDifferentSizes {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "Unable to replace character because they have different sizes.\
+            Characters have to have the same size for in-place modification."
+        )
+    }
+}
+
+impl Display for CharsHaveDifferentSizes {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        Debug::fmt(&self, f)
+    }
+}
+
+impl Error for CharsHaveDifferentSizes {}
+
 pub trait StrExt {
     fn view(&self) -> StringView<'_>;
     fn view_part(&self, start_idx: usize, end_idx: usize) -> StringView<'_>;
@@ -730,6 +957,12 @@ pub trait StrExt {
 
     fn chars_in_place(&self) -> CharsInPlace<'_>;
     fn chars_in_place_mut(&mut self) -> CharsInPlaceMut<'_>;
+
+    /// Makes str characters lowercase in-place where appropriate
+    fn make_lowercase(&mut self);
+    
+    /// Makes str characters uppercase in-place where appropriate
+    fn make_uppercase(&mut self);
 }
 
 impl StrExt for str {
@@ -779,6 +1012,50 @@ impl StrExt for str {
         );
 
         (ch_start - str_start, ch_end - str_start)
+    }
+
+    /// Makes [`str`] characters lowercase in-place where appropriate
+    /// 
+    /// ```rust
+    /// # extern crate std;
+    /// # use std::string::String;
+    ///
+    /// use string_view::StrExt;
+    ///
+    /// let text: &mut str = &mut String::from("HELLO World");
+    /// text.make_lowercase();
+    /// assert_eq!(text, "hello world");
+    /// 
+    /// let text: &mut str = &mut String::from("ПРИВЕТ Мир");
+    /// text.make_lowercase();
+    /// assert_eq!(text, "привет мир");
+    /// ```
+    fn make_lowercase(&mut self) {
+        self.chars_in_place_mut().for_each(|mut ch| {
+            let _ = ch.make_lowercase();
+        });
+    }
+
+    /// Makes [`str`] characters uppercase in-place where appropriate
+    /// 
+    /// ```rust
+    /// # extern crate std;
+    /// # use std::string::String;
+    ///
+    /// use string_view::StrExt;
+    ///
+    /// let text: &mut str = &mut String::from("Hello World");
+    /// text.make_uppercase();
+    /// assert_eq!(text, "HELLO WORLD");
+    /// 
+    /// let text: &mut str = &mut String::from("Привет мир");
+    /// text.make_uppercase();
+    /// assert_eq!(text, "ПРИВЕТ МИР");
+    /// ```
+    fn make_uppercase(&mut self) {
+        self.chars_in_place_mut().for_each(|mut ch| {
+            let _ = ch.make_uppercase();
+        });
     }
 }
 

@@ -1,12 +1,12 @@
 [package]
 name = "string-view"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 authors = ["ioannuwu <https://github.com/IoaNNUwU>"]
 license= "MIT"
 
-description = "Work with views into string slices. Safely extend, reduce without losing parent string size."
+description = "Work with views into string slices. Safely extend, reduce without losing parent string size. Modify str slices in-place to avoid allocations."
 
 repository = "https://github.com/IoaNNUwU/string-view"
 homepage = "https://github.com/IoaNNUwU/string-view"
