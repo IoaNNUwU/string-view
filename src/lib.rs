@@ -87,7 +87,7 @@ impl<'a> StringView<'a> {
         self.view_start + self.view_len
     }
 
-    pub fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &'a str {
         &self.base[self.view_start..self.view_start + self.view_len]
     }
 
