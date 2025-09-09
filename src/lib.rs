@@ -1,24 +1,42 @@
 //! ## String View
-//! 
-//! #### Work with views into string slices. Safely extend, reduce without losing parent string size. 
-//! 
-//! #### Use in-place modifications to speed up your code
-//! 
+//!
+//! #### Work with views into string slices. Safely extend, reduce without losing parent string size.
+//!
+//! #### Use in-place modifications to speed up your code.
+//!
 //! Example:
-//! 
+//!
 //! ```rust
 //! let program_text = r#"
 //! fn main() {
 //!     let text = "Hello World";
 //! }
 //! "#;
+//!
 //! use string_view::StrExt;
-//! 
+//!
 //! let mut view = program_text.view_part(0, 0);
+//! view.extend_while(|ch| ch == ' ' || ch == '\n');
 //! view.extend_while(char::is_alphabetic);
-//! view.extend_while(|ch| ch != ' ');
-//! // view.reduce_left_while(char::is_alphabetic); todo!()
+//! view.reduce_left_while(|ch| ch == ' ' || ch == '\n');
 //! assert_eq!(view.as_str(), "fn");
+//!
+//! view.try_extend(1).unwrap();
+//! view.extend_while(char::is_alphabetic);
+//! view.try_extend(2).unwrap();
+//! assert_eq!(view.as_str(), "fn main()");
+//!
+//! view.extend_while(|ch| ch == ' ' || ch == '\n' || ch == '{');
+//! view.shrink_to_end();
+//! view.extend_while(|_| true);
+//! view.reduce_while(|ch| ch == ' ' || ch == '\n' || ch == '}');
+//! assert_eq!(view.as_str(), r#"let text = "Hello World";"#);
+//! 
+//! view.reduce_while(|ch| ch == ';');
+//! view.reduce(1);
+//! view.shrink_to_end();
+//! view.extend_left_while(|ch| ch != '"');
+//! assert_eq!(view.as_str(), "Hello World");
 //! ```
 
 #![no_std]
@@ -92,6 +110,15 @@ impl<'a> StringView<'a> {
 
     pub fn as_str(&self) -> &str {
         &self.base[self.view_start..self.view_start + self.view_len]
+    }
+
+    pub fn shrink_to_end(&mut self) {
+        self.view_start += self.view_len;
+        self.view_len = 0;
+    }
+
+    pub fn shrink_to_start(&mut self) {
+        self.view_len = 0;
     }
 
     /// Extend string view to the right by `n` characters.
@@ -261,6 +288,192 @@ impl<'a> StringView<'a> {
         }
         self.view_len -= combined_len;
     }
+
+    /// Extend string view to the left by `n` characters.
+    ///
+    /// panics if there is not enough characters in base string to the left of this view.
+    ///
+    /// see [`StringView::try_extend_left`] for fallible version.
+    ///
+    /// see [`StringView::extend`] to extend to the right.
+    ///
+    /// ```rust
+    /// use string_view::StrExt;
+    ///
+    /// let text = "Hello World";
+    /// let mut view = text.view_part(6, 11);
+    /// assert_eq!(view.as_str(), "World");
+    ///
+    /// view.extend_left(6);
+    /// assert_eq!(view.as_str(), "Hello World");
+    /// ```
+    pub fn extend_left(&mut self, n: usize) {
+        self.try_extend_left(n)
+            .expect("Unable to extend string view to the left")
+    }
+
+    /// Try to extend string view to the left by `n` characters.
+    ///
+    /// returns [`Err`] if there is not enough characters in base string to the right of this view.
+    ///
+    /// see [`StringView::try_extend`] to extend to the right.
+    ///
+    /// ```rust
+    /// use string_view::StrExt;
+    ///
+    /// let text = "Hello World";
+    ///
+    /// let mut view = text.view_part(6, 11);
+    /// assert_eq!(view.as_str(), "World");
+    ///
+    /// let err = view.try_extend_left(4);
+    /// assert!(err.is_ok());
+    /// assert_eq!(view.as_str(), "llo World");
+    ///
+    /// let err = view.try_extend_left(10);
+    /// assert!(matches!(err, Err(BaseStringIsTooShort)));
+    /// assert_eq!(view.as_str(), "llo World");
+    /// ```
+    pub fn try_extend_left(&mut self, n: usize) -> Result<(), BaseStringIsTooShort<LEFT>> {
+        let mut combined_len = 0;
+        let mut char_iter = self.base[..self.start()].chars().rev();
+        for _ in 0..n {
+            combined_len += char_iter.next().ok_or(BaseStringIsTooShort)?.len_utf8();
+        }
+        self.view_start -= combined_len;
+        self.view_len += combined_len;
+        Ok(())
+    }
+
+    /// Extend string view to the left while `func` returns `true`.
+    ///
+    /// see [`StringView::extend_while`] to extend to the right.
+    ///
+    /// ```rust
+    /// use string_view::StrExt;
+    ///
+    /// let text = "Hello World !!!";
+    ///
+    /// let mut view = text.view_part(14, 15);
+    /// assert_eq!(view.as_str(), "!");
+    ///
+    /// view.extend_left_while(|ch| ch != ' ');
+    /// assert_eq!(view.as_str(), "!!!");
+    ///
+    /// view.extend_left(1);
+    /// view.extend_left_while(|ch| ch != ' ');
+    /// assert_eq!(view.as_str(), "World !!!");
+    /// ```
+    pub fn extend_left_while<F>(&mut self, mut func: F)
+    where
+        F: FnMut(char) -> bool,
+    {
+        let mut combined_len = 0;
+
+        for ch in self.base[..self.start()].chars().rev() {
+            if func(ch) {
+                combined_len += ch.len_utf8();
+            }
+            else {
+                break;
+            }
+        }
+        self.view_start -= combined_len;
+        self.view_len += combined_len;
+    }
+
+    /// Reduce string view from the left by `n` characters.
+    ///
+    /// panics if there is not enough characters in current string view.
+    ///
+    /// see [`StringView::try_reduce_left`] for fallible version.
+    ///
+    /// see [`StringView::reduce`] to reduce from the right.
+    ///
+    /// ```rust
+    /// use string_view::StrExt;
+    ///
+    /// let text = "Hello World";
+    ///
+    /// let mut view = text.view();
+    /// assert_eq!(view.as_str(), "Hello World");
+    ///
+    /// view.reduce_left(6);
+    /// assert_eq!(view.as_str(), "World");
+    /// ```
+    pub fn reduce_left(&mut self, n: usize) {
+        self.try_reduce_left(n)
+            .expect("Unable to reduce string view from the left")
+    }
+
+    /// Try to reduce string view from the left by `n` characters.
+    ///
+    /// returns [`Err`] if there is not enough characters in current string view.
+    ///
+    /// see [`StringView::try_reduce`] to reduce from the right.
+    ///
+    /// ```rust
+    /// use string_view::StrExt;
+    ///
+    /// let text = "One and only Hello World";
+    ///
+    /// let mut view = text.view_part(13, 24);
+    /// assert_eq!(view.as_str(), "Hello World");
+    ///
+    /// let result = view.try_reduce_left(6);
+    /// assert!(result.is_ok());
+    /// assert_eq!(view.as_str(), "World");
+    ///
+    /// let result = view.try_reduce_left(10);
+    /// assert!(matches!(result, Err(ViewIsTooShort)));
+    /// assert_eq!(view.as_str(), "World");
+    /// ```
+    pub fn try_reduce_left(&mut self, n: usize) -> Result<(), ViewIsTooShort<LEFT>> {
+        let mut combined_len = 0;
+        let mut char_iter = self.base[self.start()..self.end()].chars();
+        for _ in 0..n {
+            combined_len += char_iter.next().ok_or(ViewIsTooShort)?.len_utf8();
+        }
+        self.view_start += combined_len;
+        self.view_len -= combined_len;
+        Ok(())
+    }
+
+    /// Reduce string view from the left while `func` returns `true`.
+    ///
+    /// see [`StringView::reduce_while`] to reduce from the right.
+    ///
+    /// ```rust
+    /// use string_view::StrExt;
+    ///
+    /// let text = "Hello World !!!";
+    ///
+    /// let mut view = text.view();
+    /// assert_eq!(view.as_str(), "Hello World !!!");
+    ///
+    /// view.reduce_left_while(|ch| ch != ' ');
+    /// assert_eq!(view.as_str(), " World !!!");
+    ///
+    /// view.reduce_left(1);
+    /// view.reduce_left_while(|ch| ch != ' ');
+    /// assert_eq!(view.as_str(), " !!!");
+    /// ```
+    pub fn reduce_left_while<F>(&mut self, mut func: F)
+    where
+        F: FnMut(char) -> bool,
+    {
+        let mut combined_len = 0;
+        for ch in self.base[self.start()..self.end()].chars() {
+            if func(ch) {
+                combined_len += ch.len_utf8();
+            }
+            else {
+                break;
+            }
+        }
+        self.view_start += combined_len;
+        self.view_len -= combined_len;
+    }
 }
 
 impl Deref for StringView<'_> {
@@ -285,7 +498,7 @@ impl Display for StringView<'_> {
 
 type Side = bool;
 const RIGHT: bool = true;
-const _LEFT: bool = false;
+const LEFT: bool = false;
 
 /// The only error case in [`StringView::try_extend`].
 pub struct BaseStringIsTooShort<const SIDE: Side>;
@@ -306,7 +519,7 @@ impl<const SIDE: Side> Display for BaseStringIsTooShort<SIDE> {
     }
 }
 
-impl<const SIDE: bool> Error for BaseStringIsTooShort<SIDE> {}
+impl<const SIDE: Side> Error for BaseStringIsTooShort<SIDE> {}
 
 /// The only error case in [`StringView::try_reduce`].
 pub struct ViewIsTooShort<const SIDE: Side>;
@@ -327,7 +540,7 @@ impl<const SIDE: Side> Display for ViewIsTooShort<SIDE> {
     }
 }
 
-impl<const SIDE: bool> Error for ViewIsTooShort<SIDE> {}
+impl<const SIDE: Side> Error for ViewIsTooShort<SIDE> {}
 
 /// In-place character representation inside str slice
 ///

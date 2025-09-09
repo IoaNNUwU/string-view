@@ -6,11 +6,6 @@ use crate as string_view;
 use string_view::StrExt;
 
 #[test]
-fn test() {
-
-}
-
-#[test]
 fn chars_in_place() {
 
     let mut iter = "Hello".chars_in_place();
