@@ -1,6 +1,6 @@
 [package]
 name = "string-view"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 
 authors = ["ioannuwu <https://github.com/IoaNNUwU>"]
@@ -17,3 +17,21 @@ keywords = ["string", "text", "compiler", "parser", "tokenizer"]
 
 # https://crates.io/category_slugs
 categories = ["parsing", "text-processing", "template-engine", "no-std::no-alloc", "text-editors"]
+
+[profile.bench]
+debug = true
+
+[dev-dependencies]
+divan = "0.1.21"
+
+[[bench]]
+name = "trim_mut"
+harness = false
+
+[[bench]]
+name = "replace"
+harness = false
+
+[[bench]]
+name = "replace_every"
+harness = false

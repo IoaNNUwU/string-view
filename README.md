@@ -2,6 +2,8 @@
 
 #### Use in-place modifications to avoid allocations.
 
+[`str::chars_in_place_mut`](StrExt::chars_in_place_mut) / [`Char::char`](Char::char) / [`CharMut::make_uppercase`](CharMut::make_uppercase) / [`CharMut::replace`](CharMut::replace):
+
 ```rust
 use string_view::StrExt;
 
@@ -12,6 +14,39 @@ text.chars_in_place_mut()
     .for_each(|mut ch| { ch.make_uppercase(); });
 
 assert_eq!(text, "HELLO WORLD");
+
+text.chars_in_place_mut()
+    .nth(6).unwrap()
+    .replace('m');
+
+assert_eq!(text, "HELLO mORLD");
+```
+
+[`str::trim_matches_mut`](StrExt::trim_matches_mut) / [`str::replace_with_char`](StrExt::replace_with_char):
+
+```rust
+use string_view::StrExt;
+
+let mut text: &mut str = &mut String::from(" 1 3  Hello World  7 8  ");
+
+text.trim_matches_mut(|ch| ch.is_whitespace() || ch.is_numeric())
+    .replace_with_char('*');
+
+assert_eq!(text, " 1 3  ***********  7 8  ");
+```
+
+[`str::chars_in_place_mut`](StrExt::chars_in_place_mut) / [`CharMut::replace`](CharMut::replace):
+
+```rust
+use string_view::StrExt;
+
+let mut text: &mut str = &mut String::from("    Hello World    ");
+
+text.chars_in_place_mut()
+    .filter(|ch| ch.char().is_alphabetic())
+    .for_each(|mut ch| ch.replace('*').unwrap());
+
+assert_eq!(text, "    ***** *****    ");
 ```
 
 #### Work with views into string slices. Safely extend, reduce without losing parent string size.
