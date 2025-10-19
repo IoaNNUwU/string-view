@@ -113,10 +113,15 @@ impl<'a> Iterator for CharsInPlace<'a> {
     type Item = Char<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next_char_len = self.0.chars().next()?.len_utf8();
 
-        // SAFETY: next_char_len is guaranteed to be on a char boundry as it is returned from len_utf8
-        // This function is performance critical so it's ok to use unsafe
+        let next_char_len = match self.0.as_bytes().first()? {
+            ..=0b0111_1111 => 1,
+            ..=0b1011_1111 => 2,
+            ..=0b1101_1111 => 3,
+            _ => 4,
+        };
+
+        // SAFETY: next_char_len is guaranteed to be on a char boundry
         let (this, rest) = unsafe { str_split_at_unchecked(self.0, next_char_len) };
         self.0 = rest;
 
@@ -324,12 +329,17 @@ impl<'a> Iterator for CharsInPlaceMut<'a> {
     type Item = CharMut<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next_char_len = self.0.chars().next()?.len_utf8();
+
+        let next_char_len = match self.0.as_bytes().first()? {
+            ..=0b0111_1111 => 1,
+            ..=0b1101_1111 => 2,
+            ..=0b1110_1111 => 3,
+            _ => 4,
+        };
 
         let this: &mut str = core::mem::take(&mut self.0);
 
-        // SAFETY: next_char_len is guaranteed to be on a char boundry as it is returned from len_utf8
-        // This function is performance critical so it's ok to use unsafe
+        // SAFETY: next_char_len is guaranteed to be on a char boundry
         let (this, rest) = unsafe { str_split_at_mut_unchecked(this, next_char_len) };
 
         self.0 = rest;

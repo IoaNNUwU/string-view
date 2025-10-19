@@ -38,7 +38,7 @@ fn alphabet_string_view_in_place(b: Bencher) {
 
         for (idx, mut ch) in input.chars_in_place_mut().enumerate() {
             let next = &ALP.get(idx + 1..idx + 2).unwrap_or("a");
-            ch.replace('*').unwrap();
+            ch.replace(next.chars().next().unwrap()).unwrap();
         }
 
         black_box(&mut input);

@@ -37,5 +37,5 @@ name = "replace_every"
 harness = false
 
 [[bench]]
-name = "chars_in_place"
+name = "iter_chars_in_place"
 harness = false
