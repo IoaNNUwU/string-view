@@ -1,5 +1,6 @@
 use core::error::Error;
 use core::fmt::{Debug, Display};
+use core::slice;
 
 /// In-place character representation inside string slice.
 ///
@@ -114,7 +115,9 @@ impl<'a> Iterator for CharsInPlace<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let next_char_len = self.0.chars().next()?.len_utf8();
 
-        let (this, rest) = self.0.split_at(next_char_len);
+        // SAFETY: next_char_len is guaranteed to be on a char boundry as it is returned from len_utf8
+        // This function is performance critical so it's ok to use unsafe
+        let (this, rest) = unsafe { str_split_at_unchecked(self.0, next_char_len) };
         self.0 = rest;
 
         Some(Char(this))
@@ -125,7 +128,9 @@ impl<'a> DoubleEndedIterator for CharsInPlace<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         let next_char_len = self.0.chars().rev().next()?.len_utf8();
 
-        let (rest, this) = self.0.split_at(self.0.len() - next_char_len);
+        // SAFETY: next_char_len is guaranteed to be on a char boundry as it is returned from len_utf8
+        // This function is performance critical so it's ok to use unsafe
+        let (rest, this) = unsafe { str_split_at_unchecked(self.0, self.0.len() - next_char_len) };
         self.0 = rest;
 
         Some(Char(this))
@@ -322,7 +327,11 @@ impl<'a> Iterator for CharsInPlaceMut<'a> {
         let next_char_len = self.0.chars().next()?.len_utf8();
 
         let this: &mut str = core::mem::take(&mut self.0);
-        let (this, rest) = this.split_at_mut(next_char_len);
+
+        // SAFETY: next_char_len is guaranteed to be on a char boundry as it is returned from len_utf8
+        // This function is performance critical so it's ok to use unsafe
+        let (this, rest) = unsafe { str_split_at_mut_unchecked(this, next_char_len) };
+
         self.0 = rest;
 
         Some(CharMut(this))
@@ -334,7 +343,11 @@ impl<'a> DoubleEndedIterator for CharsInPlaceMut<'a> {
         let next_char_len = self.0.chars().rev().next()?.len_utf8();
 
         let this: &mut str = core::mem::take(&mut self.0);
-        let (rest, this) = this.split_at_mut(this.len() - next_char_len);
+
+        // SAFETY: next_char_len is guaranteed to be on a char boundry as it is returned from len_utf8
+        // This function is performance critical so it's ok to use unsafe
+        let (rest, this) = unsafe { str_split_at_mut_unchecked(this, this.len() - next_char_len) };
+
         self.0 = rest;
 
         Some(CharMut(this))
@@ -361,3 +374,39 @@ impl Display for CharsHaveDifferentSizes {
 }
 
 impl Error for CharsHaveDifferentSizes {}
+
+/// pub version of [`str::split_at_unchecked`].
+///
+/// # Safety
+///
+/// The caller must ensure that `mid` is a valid byte offset from the start
+/// of the string and falls on the boundary of a UTF-8 code point.
+const unsafe fn str_split_at_unchecked(s: &str, mid: usize) -> (&str, &str) {
+    let len = s.len();
+    let ptr = s.as_ptr();
+    // SAFETY: caller guarantees `mid` is on a char boundary.
+    unsafe {
+        (
+            str::from_utf8_unchecked(slice::from_raw_parts(ptr, mid)),
+            str::from_utf8_unchecked(slice::from_raw_parts(ptr.add(mid), len - mid)),
+        )
+    }
+}
+
+/// pub version of [`str::split_at_mut_unchecked`]
+///
+/// # Safety
+///
+/// The caller must ensure that `mid` is a valid byte offset from the start
+/// of the string and falls on the boundary of a UTF-8 code point.
+const unsafe fn str_split_at_mut_unchecked(s: &mut str, mid: usize) -> (&mut str, &mut str) {
+    let len = s.len();
+    let ptr = s.as_mut_ptr();
+    // SAFETY: caller guarantees `mid` is on a char boundary.
+    unsafe {
+        (
+            str::from_utf8_unchecked_mut(slice::from_raw_parts_mut(ptr, mid)),
+            str::from_utf8_unchecked_mut(slice::from_raw_parts_mut(ptr.add(mid), len - mid)),
+        )
+    }
+}
